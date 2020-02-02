@@ -17,9 +17,7 @@ YAW = 2
 
 # Drawing constants.
 REFRESH_RATE = 1. / 15.
-
 FLOOR = False
-
 
 def euler(current_pose, t, dt):
   next_pose = current_pose.copy()
@@ -54,7 +52,7 @@ def rk4(current_pose, t, dt):
     t = np.floor(t)
   w = np.cos(t)
   
-  # MISSING: Use classical Runge-Kutta to return the next pose of our robot.
+  # Use classical Runge-Kutta to return the next pose of our robot.
   # https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods
   # t is the current time.
   # dt is the time-step duration.
@@ -63,18 +61,37 @@ def rk4(current_pose, t, dt):
   # current_pose[YAW] is the current orientation of the robot.
   # Update next_pose[X], next_pose[Y], next_pose[YAW].
 
-  # Calculate the value of yaw at t, t + dt/2 and t + dt
-  yaw_0 = current_pose[YAW]
-  yaw_1 = current_pose[YAW] + np.sin(t + dt/2) - np.sin(t)
-  yaw_2 = current_pose[YAW] + np.sin(t + dt) - np.sin(t)
+  def f(t, state):
+    """
+    Calculate d(state)/dt, given the current state vector and current time. Returns the vector 
+    [dX/dt, dY/dt, dYAW/dt].
 
-  next_pose[YAW] = yaw_2
+    Inputs
+    --------
+    t : float
+      Current time
 
-  # Use RT4 to approximate the next values of X and Y 
-  next_pose[X] = current_pose[X] + dt * 1/6 * u * (np.cos(yaw_0) + 4 * np.cos(yaw_1)
-          + np.cos(yaw_2))
-  next_pose[Y] = current_pose[Y] + dt * 1/6 * u * (np.sin(yaw_0) + 4 * np.sin(yaw_1)
-          + np.sin(yaw_2))
+    state : numpy array of size 3
+      Current state vector
+
+    Returns
+    --------
+    z : numpy array of size 3
+      This is d(state)/dt
+    """
+    z = state.copy()
+    z[X] = u * np.cos(state[YAW])
+    z[Y] = u * np.sin(state[YAW])
+    z[YAW] = np.cos(t)
+
+    return z
+
+  state_k1 = dt * f(t, current_pose)
+  state_k2 = dt * f(t + dt/2, current_pose + state_k1/2)
+  state_k3 = dt * f(t + dt/2, current_pose + state_k2/2)
+  state_k4 = dt * f(t + dt, current_pose + state_k3)
+
+  next_pose = current_pose + 1/6 * (state_k1 + 2 * state_k2 + 2 * state_k3 + state_k4)
 
   return next_pose
 
