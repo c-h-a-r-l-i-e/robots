@@ -126,7 +126,24 @@ def main(args):
     # Simulate for 10 seconds.
     last_time_drawn = 0.
     last_time_drawn_real = time.time()
-    for t in np.arange(0., 10., dt):
+
+    # -----------------------------------------------------------------------------------
+    # Changes here to allow adaptive time-step
+    # -----------------------------------------------------------------------------------
+
+    sim_time = 10.
+    times = np.arange(0., sim_time, dt)
+
+    # Indexes before which we insert new times
+    indexes = 1 + np.floor(np.arange(1/dt - dt/2, 10/dt, 1/dt))     
+
+    # We add new time-steps before every integer change
+    times = np.insert(np.arange(0., sim_time, dt) , indexes, np.arange(0.999, np.floor(sim_time), 1))
+
+    for i in range(times.size - 1):
+      # Calculate t and dt based on new times array.
+      t = times[i]
+      dt = times[i+1] - times[i]
       robot_pose = integration_method(robot_pose, t, dt)
       
       plt.title('time = %.3f [s] with dt = %.3f [s]' % (t + dt, dt))
