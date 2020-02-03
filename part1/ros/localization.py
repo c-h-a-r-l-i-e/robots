@@ -47,7 +47,7 @@ def braitenberg(front, front_left, front_right, left, right):
   # A braitenberg controller that takes the range
   # measurements given in argument to steer the robot safely.
 
-  u = np.tanh(front - 0.5) ** 5
+  u = 1.5 * np.tanh(front - 0.5) ** 5
 
   w += 1 - 2.1 * np.tanh(front_right)
   w -= 1 - 2 * np.tanh(front_left)
@@ -90,7 +90,7 @@ class Particle(object):
 
 
   def move(self, delta_pose):
-    # MISSING: Update the particle pose according the motion model.
+    # Update the particle pose according the motion model.
     # delta_pose is an offset in the particle frame. As motion model,
     # use roughtly 10% standard deviation with respect to the forward
     # and rotational velocity.
@@ -108,10 +108,18 @@ class Particle(object):
     self._pose[X] += u * np.cos(self._pose[YAW])
     self._pose[Y] += u * np.sin(self._pose[YAW])
     self._pose[YAW] += w
+
+    # Deal with the kidnapped robot problem, by moving randomly with probability p
+    p = 0.005
+    if np.random.random_sample() < p:
+      self._pose[[X,Y]] = np.random.rand(2) * 4 - 2
+      # Find a valid pose for the particle
+      while not self.is_valid():
+        self._pose[[X,Y]] = np.random.rand(2) * 4 - 2
     
 
   def compute_weight(self, front, front_left, front_right, left, right):
-    # MISSING: Update the particle weight self._weight according to measurements.
+    # Update the particle weight self._weight according to measurements.
     # You can use the self.ray_trace(angle) function below. Remember to reduce the
     # weight of particles that are outside the arena. As measurement model, use a
     # Gaussian error with a standard deviation of 80 [cm]. Note that the maximum
@@ -122,16 +130,18 @@ class Particle(object):
 
     angles = np.array([0, np.pi/4, -np.pi/4, np.pi/2, -np.pi/2])
     distances = np.vectorize(self.ray_trace)(angles)
+    distances = np.clip(distances, 0, 3.5)
 
     sensor_distances = np.array([front, front_left, front_right, left, right])
-    
+    sensor_distances = np.clip(sensor_distances, 0, 3.5)
+
     probs = np.exp(-1/2 * (((distances-sensor_distances)/sigma) ** 2)) / (sigma * np.sqrt(2 * np.pi))
-    self._weight = np.sum(probs)
+    self._weight = np.sum(probs)/5
 
     if not self.is_valid():
-      self._weight *= 0.01
+      self._weight = 0.2
 
-    
+
 
   def ray_trace(self, angle):
     """Returns the distance to the first obstacle from the particle."""

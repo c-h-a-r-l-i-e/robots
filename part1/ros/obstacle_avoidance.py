@@ -21,7 +21,7 @@ from tf.transformations import euler_from_quaternion
 
 def braitenberg(front, front_left, front_right, left, right):
   u = 0.  # [m/s]
-  w = 0.  # [rad/s] going counter-clockwise.
+  w = 0.01  # [rad/s] going counter-clockwise.
 
   # A braitenberg controller that takes the range
   # measurements given in argument to steer the robot.
@@ -46,10 +46,11 @@ def rule_based(front, front_left, front_right, left, right):
       u = 1
 
   if front_left < 1:
-      w = -1
+      # If we're going backwards we want to turn left as we do so. So set 
+      w -= u
 
   if front_right < 1:
-      w = 1
+      w += u
 
 
   return u, w
