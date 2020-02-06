@@ -8,7 +8,7 @@ import numpy as np
 
 
 WALL_OFFSET = 2.
-CYLINDER_POSITION = np.array([.3, .2], dtype=np.float32)
+CYLINDER_POSITION = np.array([0., 0.], dtype=np.float32) # np.array([0.3, 0.2], dtype=np.float32) 
 CYLINDER_RADIUS = .3
 GOAL_POSITION = np.array([1.5, 1.5], dtype=np.float32)
 START_POSITION = np.array([-1.5, -1.5], dtype=np.float32)
@@ -17,20 +17,33 @@ MAX_SPEED = .5
 
 def get_velocity_to_reach_goal(position, goal_position):
   v = np.zeros(2, dtype=np.float32)
-  # MISSING: Compute the velocity field needed to reach goal_position
+  # Compute the velocity field needed to reach goal_position
   # assuming that there are no obstacles.
 
+  speed = MAX_SPEED / 2.1
+  v = normalize(goal_position - position) * speed
   return v
 
 
 def get_velocity_to_avoid_obstacles(position, obstacle_positions, obstacle_radii):
   v = np.zeros(2, dtype=np.float32)
-  # MISSING: Compute the velocity field needed to avoid the obstacles
+  # Compute the velocity field needed to avoid the obstacles
   # In the worst case there might a large force pushing towards the
   # obstacles (consider what is the largest force resulting from the
   # get_velocity_to_reach_goal function). Make sure to not create
   # speeds that are larger than max_speed for each obstacle. Both obstacle_positions
   # and obstacle_radii are lists.
+
+  for i in range(len(obstacle_positions)):
+    obj_pos = obstacle_positions[i]
+    rad = obstacle_radii[i]
+    maximum = MAX_SPEED / 2
+
+    # Distance between robot and obstacle's outside. Negative if inside.
+    distance = np.linalg.norm(position - obj_pos) - rad
+    force = np.clip(maximum - distance, 0, maximum)
+    direction = position - obj_pos if distance > -maximum else np.array([1,0])
+    v += normalize(direction) * force
 
   return v
 
