@@ -33,7 +33,7 @@ GOAL_POSITION = np.array([1.5, 1.5], dtype=np.float32)
 MAX_SPEED = .5
 EPSILON = .2
 
-USE_RELATIVE_POSITIONS = False
+USE_RELATIVE_POSITIONS = True
 
 X = 0
 Y = 1
@@ -41,21 +41,29 @@ YAW = 2
 
 
 def feedback_linearized(pose, velocity, epsilon):
-  u = 0.  # [m/s]
-  w = 0.  # [rad/s] going counter-clockwise.
-
-  # MISSING: Implement feedback-linearization to follow the velocity
+  # Feedback-linearization to follow the velocity
   # vector given as argument. Epsilon corresponds to the distance of
   # linearized point in front of the robot.
+
+  u = velocity[0] * np.cos(pose[YAW]) + velocity[1] * np.sin(pose[YAW])
+  w = (-velocity[0] * np.sin(pose[YAW]) + velocity[1] * np.cos(pose[YAW])) / epsilon
 
   return u, w
 
 
 def get_relative_position(absolute_pose, absolute_position):
-  relative_position = absolute_position.copy()
-
-  # MISSING: Compute the relative position of absolute_position in the
+  # Compute the relative position of absolute_position in the
   # coordinate frame defined by absolute_pose.
+
+  # Translate to origin
+  relative_position = absolute_position - absolute_pose[[X,Y]]
+
+  # Rotate so heading is along x axis
+  rot = - absolute_pose[YAW]
+  rot_matrix = np.array(((np.cos(rot), -np.sin(rot)),
+                         (np.sin(rot), np.cos(rot))))
+
+  relative_position = np.dot(rot_matrix, relative_position)
 
   return relative_position
 

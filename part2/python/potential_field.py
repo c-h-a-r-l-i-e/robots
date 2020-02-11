@@ -43,6 +43,12 @@ def get_velocity_to_avoid_obstacles(position, obstacle_positions, obstacle_radii
     distance = np.linalg.norm(position - obj_pos) - rad
     force = np.clip(maximum - distance, 0, maximum)
     direction = position - obj_pos if distance > -maximum else np.array([1,0])
+
+    # Rotate all velocities slightly, so robot does not get stuck 
+    rot = np.pi/8
+    rot_matrix = np.array(((np.cos(rot), -np.sin(rot)),(np.sin(rot), np.cos(rot))))
+    direction = np.dot(rot_matrix, direction)
+
     v += normalize(direction) * force
 
   return v

@@ -29,10 +29,12 @@ MAX_ITERATIONS = 500
 
 
 def sample_random_position(occupancy_grid):
-  position = np.zeros(2, dtype=np.float32)
-
-  # MISSING: Sample a valid random position (do not sample the yaw).
+  # Sample a valid random position (do not sample the yaw).
   # The corresponding cell must be free in the occupancy grid.
+  position = np.random.random_sample(2)  * 4 - 2
+
+  while not occupancy_grip.is_free(position):
+    position = np.random.random_sample(2) * 4 - 2
 
   return position
 
