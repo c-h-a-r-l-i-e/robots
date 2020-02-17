@@ -3,7 +3,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import time
 import matplotlib.pylab as plt
 import matplotlib.patches as patches
 import numpy as np
@@ -11,6 +10,7 @@ import os
 import re
 import scipy.signal
 import yaml
+import time
 
 
 # Constants used for indexing.
@@ -26,7 +26,7 @@ OCCUPIED = 2
 ROBOT_RADIUS = 0.105 / 2.
 GOAL_POSITION = np.array([1.5, 1.5], dtype=np.float32)  # Any orientation is good.
 START_POSE = np.array([-1.5, -1.5, 0.], dtype=np.float32)
-MAX_ITERATIONS = 200
+MAX_ITERATIONS = 500
 
 PLOT_SAMPLES = False
 
@@ -105,7 +105,7 @@ def adjust_pose(node, final_position, occupancy_grid):
         if PLOT_SAMPLES:
           plt.plot(pos[X], pos[Y], 'b+')
 
-        if occupancy_grid.is_occupied(pos):
+        if not occupancy_grid.is_free(pos):
           valid = False
           break
 
@@ -122,6 +122,33 @@ def adjust_pose(node, final_position, occupancy_grid):
     return None
   else:
     return final_node
+
+  
+
+# Rewire as required for RRT*
+def rewire(parent, child, occupancy_grid):
+  # Find new orientation for child node, if not possible return None
+  new_child = adjust_pose(parent, child.position, occupancy_grid)
+
+  if new_child is None:
+    return None
+
+  new_child.cost = parent.cost + arc_distance(parent, child.position, occupancy_grid)
+  
+  # If an appropriate path exists, run algorithm on all of child's children
+  for grandchild in child.neighbors:
+    new_grandchild = rewire(new_child, grandchild, occupancy_grid)
+
+    if new_grandchild is None:
+      return None
+
+    new_child.add_neighbor(new_grandchild)
+
+  new_child.parent = parent
+
+  # If all of those can be solved, commit the change, returning the new subtree, starting at child
+  return new_child
+  
 
 
 # Defines an occupancy grid.
@@ -195,6 +222,10 @@ class Node(object):
   def add_neighbor(self, node):
     self._neighbors.append(node)
 
+  def remove_neighbor(self, node):
+    if node in self._neighbors:
+      self._neighbors.remove(node)
+
   @property
   def parent(self):
     return self._parent
@@ -206,6 +237,7 @@ class Node(object):
   @property
   def neighbors(self):
     return self._neighbors
+
 
   @property
   def position(self):
@@ -228,8 +260,31 @@ class Node(object):
     self._cost = c
 
 
-def rrt(start_pose, goal_position, occupancy_grid):
-  # RRT builds a graph one node at a time.
+def arc_distance(start_node, final_position, occupancy_grid):
+  final_pose = start_node.pose.copy()
+  final_pose[:2] = final_position
+
+  delta_position = final_position - start_node.position
+  path_yaw = np.arctan2(delta_position[Y], delta_position[X])
+  delta_yaw = 2 * (start_node.pose[YAW] - path_yaw)
+  final_pose[YAW] = start_node.pose[YAW] - delta_yaw
+  final_node = Node(final_pose)
+  centre, radius = find_circle(start_node, final_node)
+
+  start_theta = np.arctan2(start_node.position[Y] - centre[Y], start_node.position[X] - centre[X])
+  clockwise = np.cross(start_node.direction, start_node.position - centre) > 0
+  end_theta = np.arctan2(final_position[Y] - centre[Y], final_position[X] - centre[X])
+  if clockwise:
+    end_theta = start_theta - np.mod(start_theta - end_theta, np.pi * 2)
+  else:
+    end_theta = start_theta + np.mod(end_theta - start_theta, np.pi * 2)
+
+  distance = 2 * radius * np.pi * np.abs(end_theta - start_theta) / (np.pi * 2)
+  return distance
+
+
+def rrt_star(start_pose, goal_position, occupancy_grid):
+  # RRT* builds a graph one node at a time.
   graph = []
   start_node = Node(start_pose)
   final_node = None
@@ -242,29 +297,70 @@ def rrt(start_pose, goal_position, occupancy_grid):
     # With a random chance, draw the goal position.
     if np.random.rand() < .05:
       position = goal_position
+
     # Find closest node in graph.
     # In practice, one uses an efficient spatial structure (e.g., quadtree).
     potential_parent = sorted(((n, np.linalg.norm(position - n.position)) for n in graph), key=lambda x: x[1])
+
+    # -----------------------------------------
+    # | Find lowest cost parent               |
+    # -----------------------------------------
+
     # Pick a node at least some distance away but not too far.
     # We also verify that the angles are aligned (within pi / 4).
     u = None
+    lowest_cost = np.inf
     for n, d in potential_parent:
       if d > .2 and d < 1.5 and n.direction.dot(position - n.position) / d > 0.70710678118:
-        u = n
-        cost = n.cost + d
-        break
-    else:
+        # find neighbor which gives lowest cost
+        actual_d = arc_distance(n, position, occupancy_grid)
+        if n.cost + actual_d < lowest_cost:
+          u = n
+          lowest_cost = n.cost + actual_d
+
+    if u is None:
       continue
+
     v = adjust_pose(u, position, occupancy_grid)
     if v is None:
       continue
-    v.cost = cost
+
+    v.cost = lowest_cost
     u.add_neighbor(v)
     v.parent = u
     graph.append(v)
-    if np.linalg.norm(v.position - goal_position) < .2:
+
+    # -----------------------------------------
+    # | Rewire                                |
+    # -----------------------------------------
+    def remove_from_graph(node):
+      for neighbor in node.neighbors:
+        remove_from_graph(neighbor)
+      if node in graph:
+        graph.remove(node)
+
+    def add_to_graph(node):
+      for neighbor in node.neighbors:
+        add_to_graph(neighbor)
+      if node not in graph:
+        graph.append(node)
+
+
+    # For each node not too far away.
+    # We also verify that the angles are aligned (within pi / 4).
+    for n, d in potential_parent:
+      if d > 0.2 and d < 1.5 and v.direction.dot(n.position - v.position) / d > 0.70710678118:
+        actual_d = arc_distance(n, position, occupancy_grid)
+        if v.cost + actual_d < n.cost:
+          new_n = rewire(v, n, occupancy_grid)
+          if new_n is not None:
+            remove_from_graph(n)
+            n.parent.remove_neighbor(n)
+            add_to_graph(new_n)
+            v.add_neighbor(new_n)
+
+    if np.linalg.norm(v.position - goal_position) < .2 and (final_node is None or v.cost < final_node.cost):
       final_node = v
-      break
   return start_node, final_node
 
 
@@ -358,6 +454,8 @@ def draw_solution(start_node, final_node=None):
 
 
 if __name__ == '__main__':
+
+ 
   parser = argparse.ArgumentParser(description='Uses RRT to reach the goal.')
   parser.add_argument('--map', action='store', default='map', help='Which map to use.')
   args, unknown = parser.parse_known_args()
@@ -377,18 +475,17 @@ if __name__ == '__main__':
   occupancy_grid = OccupancyGrid(occupancy_grid, data['origin'], data['resolution'])
 
   # Run RRT.
+  total_cost = 0
   total_time = 0
-  total_distance = 0
-  iterations = 40
+  for i in range(1):
+    t = time.clock()
+    start_node, final_node = rrt_star(START_POSE, GOAL_POSITION, occupancy_grid)
+    total_time += time.clock() - t
+    total_cost += final_node.cost
 
-  for i in range(40):
-    start = time.clock()
-    start_node, final_node = rrt(START_POSE, GOAL_POSITION, occupancy_grid)
-    total_time += time.clock() - start
-    total_distance += final_node.cost
-
-  print("time: {}".format(total_time/ iterations))
-  print("distance: {}".format(total_distance/ iterations))
+  print("Average time: {}".format(total_time/40))
+  print("Average cost: {}".format(total_cost/40))
+    
 
   # Plot environment.
   fig, ax = plt.subplots()
